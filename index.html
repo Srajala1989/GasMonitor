@@ -3,39 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Gas Monitor</title>
-    
+    <title>Cylinder Smart Monitor</title>
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #0f172a; color: #f8fafc; text-align: center; padding: 20px; margin: 0; }
-        .container { max-width: 450px; margin: 40px auto; background: #1e293b; padding: 30px; border-radius: 20px; box-shadow: 0px 10px 30px rgba(0,0,0,0.5); border: 1px solid #334155; }
+        :root { --gauge-color: #10b981; } /* Default Green */
+        body { font-family: 'Segoe UI', sans-serif; background-color: #0f172a; color: white; text-align: center; margin: 0; padding: 20px; }
+        .container { max-width: 450px; margin: auto; background: #1e293b; padding: 25px; border-radius: 25px; box-shadow: 0 15px 35px rgba(0,0,0,0.4); }
         
-        h2 { color: #38bdf8; margin-bottom: 30px; }
-
-        /* Weight Indicator */
-        .weight-display { margin: 20px 0; position: relative; }
-        .circle-outer { 
-            width: 180px; height: 180px; border-radius: 50%; border: 6px solid #334155; 
-            margin: auto; display: flex; align-items: center; justify-content: center;
-            background: radial-gradient(circle, #1e293b 60%, #0f172a 100%);
-            box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+        /* The Visual Gauge */
+        .gauge-wrapper { position: relative; width: 200px; height: 100px; margin: 20px auto; overflow: hidden; }
+        .gauge-body { 
+            position: absolute; top: 0; left: 0; width: 200px; height: 200px; 
+            border-radius: 50%; border: 20px solid #334155; border-bottom-color: var(--gauge-color);
+            transform: rotate(45deg); transition: transform 1s, border-bottom-color 1s;
         }
-        .weight-value { font-size: 42px; font-weight: bold; color: #38bdf8; }
-        .unit { font-size: 16px; color: #94a3b8; display: block; }
-
-        /* Status Alerts */
-        #status-card { 
-            padding: 20px; border-radius: 12px; margin-top: 30px; 
-            font-weight: bold; font-size: 1.2rem; transition: all 0.5s ease;
-            border: 2px solid transparent;
+        .weight-text { font-size: 32px; font-weight: bold; margin-top: -10px; }
+        
+        /* Leakage Status Label */
+        .label { font-size: 14px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; }
+        #status-box { 
+            padding: 15px; border-radius: 15px; margin-top: 20px; font-weight: bold;
+            border: 2px solid #334155; transition: 0.3s;
         }
-        .safe { background-color: rgba(16, 185, 129, 0.1); color: #10b981; border-color: #10b981; }
-        .danger { background-color: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: #ef4444; animation: pulse 1.5s infinite; }
+        .leak-danger { background: #450a0a; color: #ef4444; border-color: #ef4444 !important; animation: blink 1s infinite; }
+        .leak-safe { background: #064e3b; color: #10b981; border-color: #10b981 !important; }
 
-        @keyframes pulse {
-            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-            70% { transform: scale(1.02); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
-            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
-        }
+        @keyframes blink { 50% { opacity: 0.6; } }
     </style>
 
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -44,25 +36,24 @@
 <body>
 
     <div class="container">
-        <h2>Cylinder Health Monitor</h2>
-        
-        <div class="weight-display">
-            <div class="circle-outer">
-                <div>
-                    <span id="weight-val">--.-</span>
-                    <span class="unit">KG</span>
-                </div>
-            </div>
-            <p style="color: #94a3b8; margin-top: 15px;">Remaining Gas Weight</p>
-        </div>
+        <h2 style="color: #38bdf8;">Smart Gas Dashboard</h2>
 
-        <div id="status-card" class="safe">
-            <span id="leak-text">INITIALIZING...</span>
+        <p class="label">Cylinder Weight Level</p>
+        <div class="gauge-wrapper">
+            <div class="gauge-body" id="gauge"></div>
+        </div>
+        <div class="weight-text"><span id="weight-val">0.0</span> <span style="font-size: 16px;">KG</span></div>
+        <p id="fuel-status" style="font-size: 14px; font-weight: bold;">Calculating...</p>
+
+        <hr style="border: 0; border-top: 1px solid #334155; margin: 25px 0;">
+
+        <p class="label">Gas Leakage Status</p>
+        <div id="status-box" class="leak-safe">
+            <span id="leak-text">MONITORING...</span>
         </div>
     </div>
 
     <script>
-        // Your Verified Firebase Config
         const firebaseConfig = {
             apiKey: "AIzaSyBerTPAkCYx2tj5A9fMhlcZnlLguMbimRg",
             authDomain: "gasmonitor-6e61b.firebaseapp.com",
@@ -73,36 +64,53 @@
             appId: "1:591726728932:web:76fb463130844fc69e3ef1"
         };
 
-        // Initialize Firebase
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
 
-        // Listen for data in the 'cylinder' node
         db.ref('cylinder').on('value', (snapshot) => {
             const data = snapshot.val();
-            
             if (data) {
-                // Update Weight with 1 decimal place
-                const weight = data.weight || 0;
-                document.getElementById('weight-val').innerText = parseFloat(weight).toFixed(1);
+                // 1. Update Weight and Gauge Logic
+                const weight = parseFloat(data.weight);
+                document.getElementById('weight-val').innerText = weight.toFixed(1);
+                
+                const gauge = document.getElementById('gauge');
+                const fuelStatus = document.getElementById('fuel-status');
+                
+                // Rotation logic (45deg is Full, 225deg is Empty)
+                // Assuming 15kg is Full and 2kg is Empty
+                let rotation = 225 - ((weight / 15) * 180);
+                if (rotation < 45) rotation = 45;
+                if (rotation > 225) rotation = 225;
+                gauge.style.transform = `rotate(${rotation}deg)`;
 
-                // Update Leakage UI
-                const card = document.getElementById('status-card');
+                // Color logic based on weight
+                if (weight > 10) {
+                    document.documentElement.style.setProperty('--gauge-color', '#10b981'); // Green
+                    fuelStatus.innerText = "FULL / HEALTHY";
+                    fuelStatus.style.color = "#10b981";
+                } else if (weight > 5) {
+                    document.documentElement.style.setProperty('--gauge-color', '#f59e0b'); // Orange
+                    fuelStatus.innerText = "MEDIUM / LOW";
+                    fuelStatus.style.color = "#f59e0b";
+                } else {
+                    document.documentElement.style.setProperty('--gauge-color', '#ef4444'); // Red
+                    fuelStatus.innerText = "CRITICAL / EMPTY";
+                    fuelStatus.style.color = "#ef4444";
+                }
+
+                // 2. Update Leakage Status
+                const box = document.getElementById('status-box');
                 const text = document.getElementById('leak-text');
 
                 if (data.leakage === true) {
-                    text.innerText = "⚠ GAS LEAK DETECTED";
-                    card.className = "danger";
+                    text.innerText = "⚠️ DANGER: LEAK DETECTED";
+                    box.className = "leak-danger";
                 } else {
-                    text.innerText = "✔ SYSTEM SECURE";
-                    card.className = "safe";
+                    text.innerText = "✅ NO LEAKAGE DETECTED";
+                    box.className = "leak-safe";
                 }
-            } else {
-                document.getElementById('leak-text').innerText = "NO DATA IN DATABASE";
             }
-        }, (error) => {
-            console.error("Firebase Error: ", error);
-            document.getElementById('leak-text').innerText = "CONNECTION ERROR";
         });
     </script>
 </body>
