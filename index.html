@@ -13,47 +13,50 @@
         /* GAUGE AREA */
         .gauge-wrapper {
             position: relative;
-            width: 200px;
-            height: 100px;
+            width: 220px;
+            height: 110px;
             margin: 0 auto 15px auto;
             overflow: hidden;
         }
 
-        .gauge-bg, .gauge-fill {
+        .gauge-bg {
+            width: 220px;
+            height: 220px;
+            border-radius: 50%;
+            border: 18px solid #334155;
             position: absolute;
             top: 0; left: 0;
-            width: 200px;
-            height: 200px;
-            border-radius: 50%;
-            border: 18px solid #334155; /* The Gray Track */
             box-sizing: border-box;
         }
 
         .gauge-fill {
-            border-color: transparent;
-            /* This will be our "colored" part */
-            border-top-color: #10b981;
-            border-right-color: #10b981;
-            /* Animation starts from Empty */
+            position: absolute;
+            top: 0; left: 0;
+            width: 220px;
+            height: 220px;
+            border-radius: 50%;
+            border: 18px solid transparent;
+            /* This rotation logic keeps the colored part within the top-half visible area */
             transform: rotate(-45deg); 
             transition: transform 1.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.5s;
             z-index: 2;
+            box-sizing: border-box;
         }
 
         .weight-display { margin-top: 5px; }
-        .weight-num { font-size: 48px; font-weight: 800; color: #f8fafc; line-height: 1; }
-        .unit { font-size: 18px; color: #94a3b8; }
+        .weight-num { font-size: 56px; font-weight: 800; color: #f8fafc; line-height: 1; }
+        .unit { font-size: 20px; color: #94a3b8; margin-left: 4px; }
         
-        /* Status Card */
         #status-box { 
             padding: 18px; border-radius: 15px; margin-top: 20px; font-weight: bold;
             border: 2px solid #334155; transition: 0.4s; background: #111827;
+            display: flex; align-items: center; justify-content: center; gap: 10px;
         }
         .safe { color: #10b981; border-color: #10b981 !important; }
-        .danger { color: #ef4444; border-color: #ef4444 !important; animation: blink 1s infinite; }
+        .danger { color: #ef4444; border-color: #ef4444 !important; animation: blink 1.2s infinite; }
 
-        @keyframes blink { 50% { opacity: 0.6; } }
-        #time-stamp { font-size: 11px; color: #64748b; margin-top: 15px; text-transform: uppercase; }
+        @keyframes blink { 50% { opacity: 0.5; } }
+        #time-stamp { font-size: 11px; color: #64748b; margin-top: 20px; text-transform: uppercase; letter-spacing: 1px; }
     </style>
 
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -62,7 +65,7 @@
 <body>
 
     <div class="container">
-        <h3 style="color: #38bdf8; margin-bottom: 20px; font-size: 16px; letter-spacing: 2px;">LIVE GAS MONITOR</h3>
+        <h3 style="color: #38bdf8; margin-bottom: 25px; font-size: 14px; letter-spacing: 2px; text-align: left;">LIVE GAS MONITOR</h3>
 
         <div class="gauge-wrapper">
             <div class="gauge-bg"></div>
@@ -71,14 +74,15 @@
 
         <div class="weight-display">
             <div class="weight-num"><span id="weight-val">0.0</span><span class="unit">kg</span></div>
-            <p id="fuel-status" style="font-weight: bold; margin-top: 8px; font-size: 14px;">CONNECTING...</p>
+            <p id="fuel-status" style="font-weight: bold; margin-top: 10px; font-size: 14px; letter-spacing: 1px;">SYNCING...</p>
         </div>
 
-        <div id="status-box">
-            <span id="leak-text">WAITING FOR SENSOR...</span>
+        <div id="status-box" class="safe">
+            <span id="leak-icon">✅</span>
+            <span id="leak-text">NO LEAKAGE DETECTED</span>
         </div>
 
-        <p id="time-stamp">Last Update: --:--:--</p>
+        <p id="time-stamp">LAST UPDATE: --:--:--</p>
     </div>
 
     <script>
@@ -104,44 +108,48 @@
             if (data) {
                 const weight = parseFloat(data.weight);
                 document.getElementById('weight-val').innerText = weight.toFixed(1);
-                timeText.innerText = "Last Update: " + new Date().toLocaleTimeString();
+                timeText.innerText = "LAST UPDATE: " + new Date().toLocaleTimeString();
 
-                // CORRECTED MAPPING:
-                // Full (15kg) -> Arc is 100% Filled (135 degrees)
-                // Empty (0kg) -> Arc is 0% Filled (-45 degrees)
+                // CORRECTED GAUGE CALCULATION:
+                // We want the gauge to fill from LEFT to RIGHT.
+                // Weight 0 = -45 degrees (Left start)
+                // Weight 15 = 135 degrees (Right end)
                 let rotation = (weight / 15) * 180 - 45;
                 
-                // Keep within bounds
                 if (rotation > 135) rotation = 135;
                 if (rotation < -45) rotation = -45;
                 
                 fill.style.transform = `rotate(${rotation}deg)`;
 
-                // Color Selection
-                let color = "#10b981"; // Healthy Green
+                // Dynamic Colors
+                let color = "#10b981"; // Green
                 let msg = "CYLINDER FULL";
 
                 if (weight <= 4) {
-                    color = "#ef4444"; // Danger Red
+                    color = "#ef4444"; 
                     msg = "REFILL IMMEDIATELY";
-                } else if (weight <= 9) {
-                    color = "#f59e0b"; // Warning Orange
+                } else if (weight <= 10) {
+                    color = "#f59e0b"; 
                     msg = "GAS LEVEL LOW";
                 }
 
+                // Apply color to the active borders
+                fill.style.borderLeftColor = color;
                 fill.style.borderTopColor = color;
-                fill.style.borderRightColor = color;
                 statusText.innerText = msg;
                 statusText.style.color = color;
 
-                // Leakage Check
+                // Leakage UI
                 const box = document.getElementById('status-box');
                 const leakLabel = document.getElementById('leak-text');
+                const leakIcon = document.getElementById('leak-icon');
                 if (data.leakage === true) {
-                    leakLabel.innerText = "⚠️ DANGER: LEAK DETECTED";
+                    leakLabel.innerText = "GAS LEAKAGE DETECTED";
+                    leakIcon.innerText = "⚠️";
                     box.className = "danger";
                 } else {
-                    leakLabel.innerText = "✅ NO LEAKAGE DETECTED";
+                    leakLabel.innerText = "NO LEAKAGE DETECTED";
+                    leakIcon.innerText = "✅";
                     box.className = "safe";
                 }
             }
