@@ -5,29 +5,51 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cylinder Smart Monitor</title>
     <style>
-        :root { --gauge-color: #10b981; } /* Default Green */
         body { font-family: 'Segoe UI', sans-serif; background-color: #0f172a; color: white; text-align: center; margin: 0; padding: 20px; }
-        .container { max-width: 450px; margin: auto; background: #1e293b; padding: 25px; border-radius: 25px; box-shadow: 0 15px 35px rgba(0,0,0,0.4); }
+        .container { max-width: 400px; margin: auto; background: #1e293b; padding: 25px; border-radius: 25px; box-shadow: 0 15px 35px rgba(0,0,0,0.4); }
         
-        /* The Visual Gauge */
-        .gauge-wrapper { position: relative; width: 200px; height: 100px; margin: 20px auto; overflow: hidden; }
-        .gauge-body { 
-            position: absolute; top: 0; left: 0; width: 200px; height: 200px; 
-            border-radius: 50%; border: 20px solid #334155; border-bottom-color: var(--gauge-color);
-            transform: rotate(45deg); transition: transform 1s, border-bottom-color 1s;
+        /* Fixed Semi-Circle Gauge */
+        .gauge-container {
+            position: relative;
+            width: 200px;
+            height: 100px; /* Half height for semi-circle */
+            margin: 20px auto;
+            overflow: hidden; /* This creates the semi-circle clip */
         }
-        .weight-text { font-size: 32px; font-weight: bold; margin-top: -10px; }
+        .gauge-outline {
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            border: 15px solid #334155;
+            box-sizing: border-box;
+        }
+        .gauge-fill {
+            position: absolute;
+            top: 0; left: 0;
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            border: 15px solid transparent;
+            /* The actual "needle" color is handled by JS */
+            border-bottom-color: #10b981; 
+            border-right-color: #10b981;
+            transform: rotate(-45deg); /* Start point */
+            transition: transform 1s ease-out, border-color 0.5s;
+            box-sizing: border-box;
+        }
+
+        .weight-text { font-size: 38px; font-weight: bold; margin-top: 10px; color: #38bdf8; }
+        .label { font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; }
         
-        /* Leakage Status Label */
-        .label { font-size: 14px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; }
+        /* Status Box */
         #status-box { 
-            padding: 15px; border-radius: 15px; margin-top: 20px; font-weight: bold;
+            padding: 15px; border-radius: 12px; margin-top: 20px; font-weight: bold;
             border: 2px solid #334155; transition: 0.3s;
         }
-        .leak-danger { background: #450a0a; color: #ef4444; border-color: #ef4444 !important; animation: blink 1s infinite; }
+        .leak-danger { background: #450a0a; color: #ef4444; border-color: #ef4444 !important; animation: pulse 1s infinite; }
         .leak-safe { background: #064e3b; color: #10b981; border-color: #10b981 !important; }
 
-        @keyframes blink { 50% { opacity: 0.6; } }
+        @keyframes pulse { 50% { opacity: 0.7; transform: scale(0.98); } }
     </style>
 
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -36,20 +58,22 @@
 <body>
 
     <div class="container">
-        <h2 style="color: #38bdf8;">Smart Gas Dashboard</h2>
+        <h2 style="color: #38bdf8; margin-bottom: 5px;">Gas Monitor</h2>
+        <p style="color: #94a3b8; font-size: 14px; margin-top: 0;">Live IoT Dashboard</p>
 
-        <p class="label">Cylinder Weight Level</p>
-        <div class="gauge-wrapper">
-            <div class="gauge-body" id="gauge"></div>
+        <div class="gauge-container">
+            <div class="gauge-outline"></div>
+            <div class="gauge-fill" id="gauge-fill"></div>
         </div>
-        <div class="weight-text"><span id="weight-val">0.0</span> <span style="font-size: 16px;">KG</span></div>
-        <p id="fuel-status" style="font-size: 14px; font-weight: bold;">Calculating...</p>
+        
+        <div class="weight-text"><span id="weight-val">0.0</span> <small style="font-size: 16px;">KG</small></div>
+        <p id="fuel-status" style="font-size: 14px; font-weight: bold; margin-top: 5px;">WAITING FOR DATA...</p>
 
-        <hr style="border: 0; border-top: 1px solid #334155; margin: 25px 0;">
+        <hr style="border: 0; border-top: 1px solid #334155; margin: 20px 0;">
 
         <p class="label">Gas Leakage Status</p>
         <div id="status-box" class="leak-safe">
-            <span id="leak-text">MONITORING...</span>
+            <span id="leak-text">CONNECTING...</span>
         </div>
     </div>
 
@@ -70,39 +94,40 @@
         db.ref('cylinder').on('value', (snapshot) => {
             const data = snapshot.val();
             if (data) {
-                // 1. Update Weight and Gauge Logic
                 const weight = parseFloat(data.weight);
-                document.getElementById('weight-val').innerText = weight.toFixed(1);
-                
-                const gauge = document.getElementById('gauge');
+                const fill = document.getElementById('gauge-fill');
                 const fuelStatus = document.getElementById('fuel-status');
                 
-                // Rotation logic (45deg is Full, 225deg is Empty)
-                // Assuming 15kg is Full and 2kg is Empty
-                let rotation = 225 - ((weight / 15) * 180);
-                if (rotation < 45) rotation = 45;
-                if (rotation > 225) rotation = 225;
-                gauge.style.transform = `rotate(${rotation}deg)`;
+                document.getElementById('weight-val').innerText = weight.toFixed(1);
+                
+                // GAUGE LOGIC
+                // We map weight (0 to 15) to rotation (-45deg to 135deg)
+                let rotation = (weight / 15) * 180 - 45;
+                if (rotation > 135) rotation = 135;
+                if (rotation < -45) rotation = -45;
+                fill.style.transform = `rotate(${rotation}deg)`;
 
-                // Color logic based on weight
+                // COLOR LOGIC
                 if (weight > 10) {
-                    document.documentElement.style.setProperty('--gauge-color', '#10b981'); // Green
-                    fuelStatus.innerText = "FULL / HEALTHY";
+                    fill.style.borderBottomColor = "#10b981"; // Green
+                    fill.style.borderRightColor = "#10b981";
+                    fuelStatus.innerText = "CYLINDER FULL";
                     fuelStatus.style.color = "#10b981";
                 } else if (weight > 5) {
-                    document.documentElement.style.setProperty('--gauge-color', '#f59e0b'); // Orange
-                    fuelStatus.innerText = "MEDIUM / LOW";
+                    fill.style.borderBottomColor = "#f59e0b"; // Orange
+                    fill.style.borderRightColor = "#f59e0b";
+                    fuelStatus.innerText = "GAS RUNNING LOW";
                     fuelStatus.style.color = "#f59e0b";
                 } else {
-                    document.documentElement.style.setProperty('--gauge-color', '#ef4444'); // Red
-                    fuelStatus.innerText = "CRITICAL / EMPTY";
+                    fill.style.borderBottomColor = "#ef4444"; // Red
+                    fill.style.borderRightColor = "#ef4444";
+                    fuelStatus.innerText = "CRITICAL: REFILL SOON";
                     fuelStatus.style.color = "#ef4444";
                 }
 
-                // 2. Update Leakage Status
+                // LEAKAGE LOGIC
                 const box = document.getElementById('status-box');
                 const text = document.getElementById('leak-text');
-
                 if (data.leakage === true) {
                     text.innerText = "⚠️ DANGER: LEAK DETECTED";
                     box.className = "leak-danger";
