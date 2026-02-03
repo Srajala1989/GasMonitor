@@ -91,62 +91,90 @@
     </div>
 
     <script>
-        const firebaseConfig = {
-            apiKey: "AIzaSyBerTPAkCYx2tj5A9fMhlcZnlLguMbimRg",
-            authDomain: "gasmonitor-6e61b.firebaseapp.com",
-            databaseURL: "https://gasmonitor-6e61b-default-rtdb.firebaseio.com",
-            projectId: "gasmonitor-6e61b",
-            storageBucket: "gasmonitor-6e61b.firebasestorage.app",
-            messagingSenderId: "591726728932",
-            appId: "1:591726728932:web:76fb463130844fc69e3ef1"
-        };
+    // 1. Firebase Configuration
+    const firebaseConfig = {
+        apiKey: "AIzaSyBerTPAkCYx2tj5A9fMhlcZnlLguMbimRg",
+        authDomain: "gasmonitor-6e61b.firebaseapp.com",
+        databaseURL: "https://gasmonitor-6e61b-default-rtdb.firebaseio.com",
+        projectId: "gasmonitor-6e61b",
+        storageBucket: "gasmonitor-6e61b.firebasestorage.app",
+        messagingSenderId: "591726728932",
+        appId: "1:591726728932:web:76fb463130844fc69e3ef1"
+    };
 
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.database();
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
 
-        db.ref('cylinder').on('value', (snapshot) => {
-            const data = snapshot.val();
-            if (data) {
-                const weight = parseFloat(data.weight);
-                const gauge = document.getElementById('gauge-progress');
-                const statusText = document.getElementById('fuel-status');
-                
-                document.getElementById('weight-val').innerText = weight.toFixed(1);
-                document.getElementById('time-stamp').innerText = "LAST UPDATE: " + new Date().toLocaleTimeString();
+    // 2. Real-time Database Listener
+    db.ref('cylinder').on('value', (snapshot) => {
+        const data = snapshot.val();
+        
+        if (data) {
+            const weight = parseFloat(data.weight);
+            const gauge = document.getElementById('gauge-progress');
+            const statusText = document.getElementById('fuel-status');
+            const timeText = document.getElementById('time-stamp');
+            
+            // Update Weight Number
+            document.getElementById('weight-val').innerText = weight.toFixed(1);
 
-                // Calculate percentage (0 to 50% because it's a semi-circle)
-                let percent = (weight / 15) * 50; 
-                if (percent > 50) percent = 50;
-                if (percent < 0) percent = 0;
-
-                // Set Color
-                let color = "#10b981"; // Green
-                let msg = "CYLINDER FULL";
-                if (weight <= 4) { color = "#ef4444"; msg = "REFILL IMMEDIATELY"; }
-                else if (weight <= 10) { color = "#f59e0b"; msg = "GAS LEVEL LOW"; }
-
-                // Update Gauge CSS Variables
-                gauge.style.setProperty('--percentage', percent + '%');
-                gauge.style.setProperty('--g-color', color);
-                
-                statusText.innerText = msg;
-                statusText.style.color = color;
-
-                // Leakage Update
-                const box = document.getElementById('status-box');
-                const leakText = document.getElementById('leak-text');
-                const leakIcon = document.getElementById('leak-icon');
-                if (data.leakage === true) {
-                    leakText.innerText = "GAS LEAKAGE DETECTED";
-                    leakIcon.innerText = "⚠";
-                    box.className = "danger";
-                } else {
-                    leakText.innerText = "NO LEAKAGE DETECTED";
-                    leakIcon.innerText = "✔";
-                    box.className = "safe";
-                }
+            // Handle Timestamp: 
+            // Priority 1: Use timestamp stored in DB by Arduino
+            // Priority 2: Fallback to current browser time if DB timestamp is missing
+            if (data.last_updated) {
+                const dbDate = new Date(data.last_updated);
+                timeText.innerText = "LAST DATA RECEIVED: " + dbDate.toLocaleTimeString();
+            } else {
+                timeText.innerText = "LAST UPDATED (LIVE): " + new Date().toLocaleTimeString();
             }
-        });
-    </script>
+
+            // Gauge Fill Mapping (0kg = 0%, 15kg = 50% for semi-circle)
+            let percent = (weight / 15) * 50; 
+            if (percent > 50) percent = 50;
+            if (percent < 0) percent = 0;
+            gauge.style.setProperty('--percentage', percent + '%');
+
+            // 6-LEVEL COLOR & LABEL LOGIC
+            let color, msg;
+
+            if (weight >= 15.0) {
+                color = "#059669"; // Level 6: Exactly 15kg
+                msg = "CYLINDER FULL";
+            } else if (weight >= 12.0) {
+                color = "#10b981"; // Level 5: 12kg to 14.9kg
+                msg = "ALMOST FULL";
+            } else if (weight >= 9.0) {
+                color = "#84cc16"; // Level 4: 9kg to 11.9kg
+                msg = "GOOD LEVEL";
+            } else if (weight >= 6.0) {
+                color = "#eab308"; // Level 3: 6kg to 8.9kg
+                msg = "MEDIUM LEVEL";
+            } else if (weight >= 3.0) {
+                color = "#f97316"; // Level 2: 3kg to 5.9kg
+                msg = "LOW LEVEL";
+            } else {
+                color = "#ef4444"; // Level 1: Under 3kg
+                msg = "REFILL IMMEDIATELY";
+            }
+
+            // Apply visual updates to Gauge and Label
+            gauge.style.setProperty('--g-color', color);
+            statusText.innerText = msg;
+            statusText.style.color = color;
+
+            // Leakage Status Update
+            const box = document.getElementById('status-box');
+            const leakText = document.getElementById('leak-text');
+            if (data.leakage === true) {
+                leakText.innerText = "⚠ GAS LEAKAGE DETECTED";
+                box.className = "danger";
+            } else {
+                leakText.innerText = "✔ SYSTEM SECURE";
+                box.className = "safe";
+            }
+        }
+    });
+</script>
 </body>
 </html>
