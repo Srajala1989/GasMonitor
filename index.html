@@ -7,50 +7,53 @@
     
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a; color: white; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
-        .container { width: 100%; max-width: 360px; background: #1e293b; padding: 30px; border-radius: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.3); border: 1px solid #334155; }
+        body { font-family: 'Segoe UI', Roboto, Arial, sans-serif; background-color: #0f172a; color: white; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+        .container { width: 100%; max-width: 380px; background: #1e293b; padding: 25px; border-radius: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); border: 1px solid #334155; }
         
-        /* GAUGE CONTAINER - Fixed Height/Width */
+        /* GAUGE AREA */
         .gauge-wrapper {
             position: relative;
             width: 200px;
-            height: 100px; /* Exact half of the circle */
-            margin: 0 auto 20px auto;
-            overflow: hidden; /* Ensures nothing spills out */
+            height: 100px;
+            margin: 0 auto 15px auto;
+            overflow: hidden;
         }
 
         .gauge-bg, .gauge-fill {
             position: absolute;
             top: 0; left: 0;
             width: 200px;
-            height: 200px; /* Full circle height */
+            height: 200px;
             border-radius: 50%;
-            border: 20px solid #334155;
+            border: 18px solid #334155; /* The Gray Track */
             box-sizing: border-box;
         }
 
         .gauge-fill {
             border-color: transparent;
-            /* Default Green */
+            /* This will be our "colored" part */
             border-top-color: #10b981;
             border-right-color: #10b981;
-            transform: rotate(-45deg); /* Empty position */
+            /* Animation starts from Empty */
+            transform: rotate(-45deg); 
             transition: transform 1.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.5s;
             z-index: 2;
         }
 
-        .weight-display { margin-top: -10px; }
-        .weight-num { font-size: 44px; font-weight: 800; color: #f8fafc; line-height: 1.2; }
-        .unit { font-size: 16px; color: #94a3b8; vertical-align: middle; }
+        .weight-display { margin-top: 5px; }
+        .weight-num { font-size: 48px; font-weight: 800; color: #f8fafc; line-height: 1; }
+        .unit { font-size: 18px; color: #94a3b8; }
         
+        /* Status Card */
         #status-box { 
-            padding: 18px; border-radius: 16px; margin-top: 25px; font-weight: bold; font-size: 1rem;
-            border: 2px solid transparent; transition: 0.4s; background: #111827;
+            padding: 18px; border-radius: 15px; margin-top: 20px; font-weight: bold;
+            border: 2px solid #334155; transition: 0.4s; background: #111827;
         }
-        .safe { color: #10b981; border-color: #10b981 !important; box-shadow: 0 0 15px rgba(16, 185, 129, 0.2); }
-        .danger { color: #ef4444; border-color: #ef4444 !important; box-shadow: 0 0 15px rgba(239, 68, 68, 0.2); animation: pulse 1s infinite; }
+        .safe { color: #10b981; border-color: #10b981 !important; }
+        .danger { color: #ef4444; border-color: #ef4444 !important; animation: blink 1s infinite; }
 
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+        @keyframes blink { 50% { opacity: 0.6; } }
+        #time-stamp { font-size: 11px; color: #64748b; margin-top: 15px; text-transform: uppercase; }
     </style>
 
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -59,7 +62,7 @@
 <body>
 
     <div class="container">
-        <h3 style="color: #38bdf8; margin-bottom: 25px; font-size: 18px; letter-spacing: 1px;">CYLINDER MONITOR</h3>
+        <h3 style="color: #38bdf8; margin-bottom: 20px; font-size: 16px; letter-spacing: 2px;">LIVE GAS MONITOR</h3>
 
         <div class="gauge-wrapper">
             <div class="gauge-bg"></div>
@@ -67,13 +70,15 @@
         </div>
 
         <div class="weight-display">
-            <div class="weight-num"><span id="weight-val">0.0</span> <span class="unit">KG</span></div>
-            <p id="fuel-status" style="font-weight: bold; margin-top: 5px; font-size: 14px;">CONNECTING...</p>
+            <div class="weight-num"><span id="weight-val">0.0</span><span class="unit">kg</span></div>
+            <p id="fuel-status" style="font-weight: bold; margin-top: 8px; font-size: 14px;">CONNECTING...</p>
         </div>
 
         <div id="status-box">
-            <span id="leak-text">INITIALIZING...</span>
+            <span id="leak-text">WAITING FOR SENSOR...</span>
         </div>
+
+        <p id="time-stamp">Last Update: --:--:--</p>
     </div>
 
     <script>
@@ -94,26 +99,33 @@
             const data = snapshot.val();
             const fill = document.getElementById('gauge-fill');
             const statusText = document.getElementById('fuel-status');
+            const timeText = document.getElementById('time-stamp');
             
             if (data) {
                 const weight = parseFloat(data.weight);
                 document.getElementById('weight-val').innerText = weight.toFixed(1);
+                timeText.innerText = "Last Update: " + new Date().toLocaleTimeString();
 
-                // Math Fix: 0kg = -45deg | 15kg = 135deg
+                // CORRECTED MAPPING:
+                // Full (15kg) -> Arc is 100% Filled (135 degrees)
+                // Empty (0kg) -> Arc is 0% Filled (-45 degrees)
                 let rotation = (weight / 15) * 180 - 45;
+                
+                // Keep within bounds
                 if (rotation > 135) rotation = 135;
                 if (rotation < -45) rotation = -45;
+                
                 fill.style.transform = `rotate(${rotation}deg)`;
 
-                // Color & Text thresholds
-                let color = "#10b981"; // Green
+                // Color Selection
+                let color = "#10b981"; // Healthy Green
                 let msg = "CYLINDER FULL";
 
-                if (weight <= 5) {
-                    color = "#ef4444"; // Red
+                if (weight <= 4) {
+                    color = "#ef4444"; // Danger Red
                     msg = "REFILL IMMEDIATELY";
-                } else if (weight <= 10) {
-                    color = "#f59e0b"; // Orange
+                } else if (weight <= 9) {
+                    color = "#f59e0b"; // Warning Orange
                     msg = "GAS LEVEL LOW";
                 }
 
@@ -122,11 +134,11 @@
                 statusText.innerText = msg;
                 statusText.style.color = color;
 
-                // Leakage UI
+                // Leakage Check
                 const box = document.getElementById('status-box');
                 const leakLabel = document.getElementById('leak-text');
                 if (data.leakage === true) {
-                    leakLabel.innerText = "⚠️ GAS LEAKAGE DETECTED";
+                    leakLabel.innerText = "⚠️ DANGER: LEAK DETECTED";
                     box.className = "danger";
                 } else {
                     leakLabel.innerText = "✅ NO LEAKAGE DETECTED";
